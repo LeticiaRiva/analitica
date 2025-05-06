@@ -1,0 +1,1060 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Analytics de Facturación</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        .chart-container {
+            position: relative;
+            height: 400px;
+            width: 100%;
+        }
+        .note-textarea {
+            min-height: 100px;
+            resize: vertical;
+        }
+        .sidebar {
+            transition: all 0.3s ease;
+        }
+        @media (max-width: 768px) {
+            .sidebar {
+                position: absolute;
+                left: -100%;
+                z-index: 100;
+                width: 80%;
+            }
+            .sidebar.active {
+                left: 0;
+            }
+        }
+        .loading-spinner {
+            border: 4px solid rgba(0, 0, 0, 0.1);
+            border-radius: 50%;
+            border-top: 4px solid #3498db;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body class="bg-gray-100">
+    <div class="flex h-screen overflow-hidden">
+        <!-- Sidebar -->
+        <div class="sidebar bg-white shadow-lg w-64 p-4">
+            <div class="flex items-center justify-between mb-6">
+                <h1 class="text-xl font-bold text-blue-600">Facturación Analytics</h1>
+                <button id="closeSidebar" class="md:hidden text-gray-500">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            
+            <div class="mb-6">
+                <h2 class="text-lg font-semibold mb-2">Filtros</h2>
+                
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Año(s)</label>
+                    <select id="yearFilter" class="w-full p-2 border rounded-md" multiple>
+                        <option value="2023">2023</option>
+                        <option value="2024">2024</option>
+                        <option value="2025" selected>2025</option>
+                    </select>
+                </div>
+                
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Mes(es)</label>
+                    <select id="monthFilter" class="w-full p-2 border rounded-md" multiple>
+                        <option value="1">Enero</option>
+                        <option value="2">Febrero</option>
+                        <option value="3">Marzo</option>
+                        <option value="4">Abril</option>
+                        <option value="5">Mayo</option>
+                        <option value="6">Junio</option>
+                        <option value="7">Julio</option>
+                        <option value="8">Agosto</option>
+                        <option value="9">Septiembre</option>
+                        <option value="10">Octubre</option>
+                        <option value="11">Noviembre</option>
+                        <option value="12">Diciembre</option>
+                    </select>
+                </div>
+                
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Canales</label>
+                    <select id="channelFilter" class="w-full p-2 border rounded-md" multiple>
+                        <option value="total" selected>Total</option>
+                        <option value="organico" selected>Orgánico</option>
+                        <option value="pagado" selected>Pagado</option>
+                        <option value="email" selected>Email</option>
+                        <option value="referidos" selected>Referidos</option>
+                        <option value="redes" selected>Redes Sociales</option>
+                        <option value="otros" selected>Otros</option>
+                    </select>
+                </div>
+                
+                <div class="mb-4">
+                    <label class="flex items-center">
+                        <input type="checkbox" id="compareSameMonth" class="mr-2">
+                        <span class="text-sm">Comparar mismo mes en diferentes años</span>
+                    </label>
+                </div>
+                
+                <button id="applyFilters" class="w-full bg-blue-600 text-white py-2 rounded-md hover:bg-blue-700 transition">
+                    Aplicar Filtros
+                </button>
+            </div>
+            
+            <div class="mb-6">
+                <h2 class="text-lg font-semibold mb-2">Configuración</h2>
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-1">ID de Hoja Google</label>
+                    <input type="text" id="sheetId" class="w-full p-2 border rounded-md" placeholder="Ingresa el ID de la hoja">
+                </div>
+                <button id="connectSheet" class="w-full bg-green-600 text-white py-2 rounded-md hover:bg-green-700 transition">
+                    Conectar a Google Sheets
+                </button>
+            </div>
+            
+            <div class="text-xs text-gray-500">
+                <p>Conecta tu hoja de Google Sheets para visualizar los datos en tiempo real.</p>
+            </div>
+        </div>
+        
+        <!-- Main Content -->
+        <div class="flex-1 overflow-auto">
+            <div class="bg-white shadow-sm p-4">
+                <div class="flex justify-between items-center">
+                    <button id="toggleSidebar" class="md:hidden text-gray-500">
+                        <i class="fas fa-bars"></i>
+                    </button>
+                    <h2 class="text-xl font-semibold">Dashboard de Facturación</h2>
+                    <div class="flex space-x-2">
+                        <button id="exportPdf" class="bg-red-500 text-white px-3 py-1 rounded-md text-sm hover:bg-red-600 transition">
+                            <i class="fas fa-file-pdf mr-1"></i> PDF
+                        </button>
+                        <button id="exportImage" class="bg-blue-500 text-white px-3 py-1 rounded-md text-sm hover:bg-blue-600 transition">
+                            <i class="fas fa-image mr-1"></i> Imagen
+                        </button>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="p-4">
+                <div id="loading" class="flex justify-center items-center py-10 hidden">
+                    <div class="loading-spinner"></div>
+                    <span class="ml-3">Cargando datos...</span>
+                </div>
+                
+                <div id="errorMessage" class="bg-red-100 border-l-4 border-red-500 text-red-700 p-4 mb-4 hidden">
+                    <p id="errorText"></p>
+                </div>
+                
+                <div id="dashboardContent" class="hidden">
+                    <!-- Summary Cards -->
+                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+                        <div class="bg-white p-4 rounded-lg shadow">
+                            <h3 class="text-sm font-medium text-gray-500">Facturación Total</h3>
+                            <p id="totalRevenue" class="text-2xl font-bold">$0</p>
+                            <p id="totalRevenueChange" class="text-sm"></p>
+                        </div>
+                        <div class="bg-white p-4 rounded-lg shadow">
+                            <h3 class="text-sm font-medium text-gray-500">Orgánico</h3>
+                            <p id="organicRevenue" class="text-2xl font-bold">$0</p>
+                            <p id="organicRevenueChange" class="text-sm"></p>
+                        </div>
+                        <div class="bg-white p-4 rounded-lg shadow">
+                            <h3 class="text-sm font-medium text-gray-500">Pagado</h3>
+                            <p id="paidRevenue" class="text-2xl font-bold">$0</p>
+                            <p id="paidRevenueChange" class="text-sm"></p>
+                        </div>
+                        <div class="bg-white p-4 rounded-lg shadow">
+                            <h3 class="text-sm font-medium text-gray-500">Email</h3>
+                            <p id="emailRevenue" class="text-2xl font-bold">$0</p>
+                            <p id="emailRevenueChange" class="text-sm"></p>
+                        </div>
+                    </div>
+                    
+                    <!-- Charts -->
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+                        <div class="bg-white p-4 rounded-lg shadow">
+                            <h3 class="text-lg font-semibold mb-4">Facturación Mensual</h3>
+                            <div class="chart-container">
+                                <canvas id="monthlyRevenueChart"></canvas>
+                            </div>
+                        </div>
+                        <div class="bg-white p-4 rounded-lg shadow">
+                            <h3 class="text-lg font-semibold mb-4">Comparación por Canal</h3>
+                            <div class="chart-container">
+                                <canvas id="channelComparisonChart"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+                        <div class="bg-white p-4 rounded-lg shadow">
+                            <h3 class="text-lg font-semibold mb-4">Distribución por Canal</h3>
+                            <div class="chart-container">
+                                <canvas id="channelDistributionChart"></canvas>
+                            </div>
+                        </div>
+                        <div class="bg-white p-4 rounded-lg shadow">
+                            <h3 class="text-lg font-semibold mb-4">Comparación de Meses</h3>
+                            <div class="chart-container">
+                                <canvas id="monthComparisonChart"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Data Table -->
+                    <div class="bg-white p-4 rounded-lg shadow mb-6">
+                        <div class="flex justify-between items-center mb-4">
+                            <h3 class="text-lg font-semibold">Datos Detallados</h3>
+                            <div class="flex space-x-2">
+                                <button id="showNotes" class="text-blue-600 text-sm hover:underline">
+                                    <i class="fas fa-comment-alt mr-1"></i> Mostrar Notas
+                                </button>
+                            </div>
+                        </div>
+                        <div class="overflow-x-auto">
+                            <table class="min-w-full divide-y divide-gray-200">
+                                <thead class="bg-gray-50">
+                                    <tr>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Año</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Mes</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Orgánico</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Pagado</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Email</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Referidos</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Redes</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Otros</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="dataTableBody" class="bg-white divide-y divide-gray-200">
+                                    <!-- Data will be inserted here -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                    
+                    <!-- Notes Section -->
+                    <div id="notesSection" class="bg-white p-4 rounded-lg shadow hidden">
+                        <h3 class="text-lg font-semibold mb-4">Notas y Comentarios</h3>
+                        <div id="notesContainer">
+                            <!-- Notes will be added here -->
+                        </div>
+                        <div class="mt-4">
+                            <h4 class="text-md font-medium mb-2">Agregar Nueva Nota</h4>
+                            <div class="mb-2">
+                                <select id="noteMonth" class="p-2 border rounded-md mr-2">
+                                    <option value="">Seleccionar Mes</option>
+                                    <option value="1">Enero</option>
+                                    <option value="2">Febrero</option>
+                                    <option value="3">Marzo</option>
+                                    <option value="4">Abril</option>
+                                    <option value="5">Mayo</option>
+                                    <option value="6">Junio</option>
+                                    <option value="7">Julio</option>
+                                    <option value="8">Agosto</option>
+                                    <option value="9">Septiembre</option>
+                                    <option value="10">Octubre</option>
+                                    <option value="11">Noviembre</option>
+                                    <option value="12">Diciembre</option>
+                                </select>
+                                <select id="noteYear" class="p-2 border rounded-md">
+                                    <option value="">Seleccionar Año</option>
+                                    <option value="2023">2023</option>
+                                    <option value="2024">2024</option>
+                                    <option value="2025">2025</option>
+                                </select>
+                            </div>
+                            <textarea id="noteText" class="w-full p-2 border rounded-md note-textarea" placeholder="Escribe tu nota aquí..."></textarea>
+                            <button id="saveNote" class="mt-2 bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 transition">
+                                Guardar Nota
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Global variables
+        let sheetData = [];
+        let filteredData = [];
+        let notes = {};
+        let charts = {
+            monthlyRevenue: null,
+            channelComparison: null,
+            channelDistribution: null,
+            monthComparison: null
+        };
+        
+        // DOM Elements
+        const toggleSidebar = document.getElementById('toggleSidebar');
+        const closeSidebar = document.getElementById('closeSidebar');
+        const sidebar = document.querySelector('.sidebar');
+        const applyFilters = document.getElementById('applyFilters');
+        const connectSheet = document.getElementById('connectSheet');
+        const exportPdf = document.getElementById('exportPdf');
+        const exportImage = document.getElementById('exportImage');
+        const showNotes = document.getElementById('showNotes');
+        const notesSection = document.getElementById('notesSection');
+        const saveNote = document.getElementById('saveNote');
+        const loading = document.getElementById('loading');
+        const errorMessage = document.getElementById('errorMessage');
+        const errorText = document.getElementById('errorText');
+        const dashboardContent = document.getElementById('dashboardContent');
+        
+        // Event Listeners
+        toggleSidebar.addEventListener('click', () => {
+            sidebar.classList.add('active');
+        });
+        
+        closeSidebar.addEventListener('click', () => {
+            sidebar.classList.remove('active');
+        });
+        
+        applyFilters.addEventListener('click', applyDataFilters);
+        connectSheet.addEventListener('click', connectToGoogleSheet);
+        exportPdf.addEventListener('click', exportToPdf);
+        exportImage.addEventListener('click', exportToImage);
+        showNotes.addEventListener('click', toggleNotesSection);
+        saveNote.addEventListener('click', saveNewNote);
+        
+        // Initialize the app
+        function init() {
+            // Load any saved notes from localStorage
+            const savedNotes = localStorage.getItem('billingNotes');
+            if (savedNotes) {
+                notes = JSON.parse(savedNotes);
+            }
+            
+            // Set up multiple select for filters
+            setupMultipleSelect('yearFilter');
+            setupMultipleSelect('monthFilter');
+            setupMultipleSelect('channelFilter');
+            
+            // Set default filters
+            document.getElementById('yearFilter').querySelector('option[value="2025"]').selected = true;
+            document.getElementById('monthFilter').querySelectorAll('option').forEach(opt => opt.selected = true);
+            document.getElementById('channelFilter').querySelectorAll('option').forEach(opt => opt.selected = true);
+        }
+        
+        // Set up multiple select functionality
+        function setupMultipleSelect(id) {
+            const select = document.getElementById(id);
+            select.addEventListener('mousedown', (e) => {
+                e.preventDefault();
+                
+                const option = e.target;
+                if (option.tagName === 'OPTION') {
+                    option.selected = !option.selected;
+                    
+                    // Trigger change event
+                    const event = new Event('change');
+                    select.dispatchEvent(event);
+                }
+            });
+        }
+        
+        // Connect to Google Sheet
+        function connectToGoogleSheet() {
+            const sheetId = document.getElementById('sheetId').value.trim();
+            
+            if (!sheetId) {
+                showError('Por favor ingresa el ID de la hoja de Google Sheets');
+                return;
+            }
+            
+            loading.classList.remove('hidden');
+            errorMessage.classList.add('hidden');
+            dashboardContent.classList.add('hidden');
+            
+            // In a real implementation, you would use the Google Sheets API
+            // For this example, we'll simulate loading data
+            setTimeout(() => {
+                // Simulate fetching data
+                simulateGoogleSheetsData(sheetId);
+            }, 1500);
+        }
+        
+        // Simulate fetching data from Google Sheets
+        function simulateGoogleSheetsData(sheetId) {
+            // This is just sample data - in a real app you would use the Google Sheets API
+            const sampleData = [
+                { año: 2023, mes: 1, total: 15000, organico: 5000, pagado: 4000, email: 2000, referidos: 1500, redes: 1000, otros: 1500 },
+                { año: 2023, mes: 2, total: 16000, organico: 5500, pagado: 4200, email: 2100, referidos: 1600, redes: 1100, otros: 1500 },
+                { año: 2023, mes: 3, total: 17000, organico: 6000, pagado: 4500, email: 2200, referidos: 1700, redes: 1200, otros: 1400 },
+                { año: 2023, mes: 4, total: 18000, organico: 6500, pagado: 4800, email: 2300, referidos: 1800, redes: 1300, otros: 1300 },
+                { año: 2023, mes: 5, total: 19000, organico: 7000, pagado: 5000, email: 2400, referidos: 1900, redes: 1400, otros: 1200 },
+                { año: 2023, mes: 6, total: 20000, organico: 7500, pagado: 5200, email: 2500, referidos: 2000, redes: 1500, otros: 1100 },
+                { año: 2023, mes: 7, total: 21000, organico: 8000, pagado: 5400, email: 2600, referidos: 2100, redes: 1600, otros: 1000 },
+                { año: 2023, mes: 8, total: 22000, organico: 8500, pagado: 5600, email: 2700, referidos: 2200, redes: 1700, otros: 900 },
+                { año: 2023, mes: 9, total: 23000, organico: 9000, pagado: 5800, email: 2800, referidos: 2300, redes: 1800, otros: 800 },
+                { año: 2023, mes: 10, total: 24000, organico: 9500, pagado: 6000, email: 2900, referidos: 2400, redes: 1900, otros: 700 },
+                { año: 2023, mes: 11, total: 25000, organico: 10000, pagado: 6200, email: 3000, referidos: 2500, redes: 2000, otros: 600 },
+                { año: 2023, mes: 12, total: 26000, organico: 10500, pagado: 6400, email: 3100, referidos: 2600, redes: 2100, otros: 500 },
+                
+                { año: 2024, mes: 1, total: 18000, organico: 6500, pagado: 5000, email: 2500, referidos: 2000, redes: 1000, otros: 1000 },
+                { año: 2024, mes: 2, total: 19000, organico: 7000, pagado: 5200, email: 2600, referidos: 2100, redes: 1100, otros: 900 },
+                { año: 2024, mes: 3, total: 20000, organico: 7500, pagado: 5400, email: 2700, referidos: 2200, redes: 1200, otros: 800 },
+                { año: 2024, mes: 4, total: 21000, organico: 8000, pagado: 5600, email: 2800, referidos: 2300, redes: 1300, otros: 700 },
+                { año: 2024, mes: 5, total: 22000, organico: 8500, pagado: 5800, email: 2900, referidos: 2400, redes: 1400, otros: 600 },
+                { año: 2024, mes: 6, total: 23000, organico: 9000, pagado: 6000, email: 3000, referidos: 2500, redes: 1500, otros: 500 },
+                { año: 2024, mes: 7, total: 24000, organico: 9500, pagado: 6200, email: 3100, referidos: 2600, redes: 1600, otros: 400 },
+                { año: 2024, mes: 8, total: 25000, organico: 10000, pagado: 6400, email: 3200, referidos: 2700, redes: 1700, otros: 300 },
+                { año: 2024, mes: 9, total: 26000, organico: 10500, pagado: 6600, email: 3300, referidos: 2800, redes: 1800, otros: 200 },
+                { año: 2024, mes: 10, total: 27000, organico: 11000, pagado: 6800, email: 3400, referidos: 2900, redes: 1900, otros: 100 },
+                { año: 2024, mes: 11, total: 28000, organico: 11500, pagado: 7000, email: 3500, referidos: 3000, redes: 2000, otros: 0 },
+                { año: 2024, mes: 12, total: 29000, organico: 12000, pagado: 7200, email: 3600, referidos: 3100, redes: 2100, otros: 0 },
+                
+                { año: 2025, mes: 1, total: 22000, organico: 9000, pagado: 6000, email: 3000, referidos: 2500, redes: 1000, otros: 500 },
+                { año: 2025, mes: 2, total: 23000, organico: 9500, pagado: 6200, email: 3100, referidos: 2600, redes: 1100, otros: 400 },
+                { año: 2025, mes: 3, total: 24000, organico: 10000, pagado: 6400, email: 3200, referidos: 2700, redes: 1200, otros: 300 },
+                { año: 2025, mes: 4, total: 25000, organico: 10500, pagado: 6600, email: 3300, referidos: 2800, redes: 1300, otros: 200 },
+                { año: 2025, mes: 5, total: 26000, organico: 11000, pagado: 6800, email: 3400, referidos: 2900, redes: 1400, otros: 100 },
+                { año: 2025, mes: 6, total: 27000, organico: 11500, pagado: 7000, email: 3500, referidos: 3000, redes: 1500, otros: 0 },
+                { año: 2025, mes: 7, total: 28000, organico: 12000, pagado: 7200, email: 3600, referidos: 3100, redes: 1600, otros: 0 },
+                { año: 2025, mes: 8, total: 29000, organico: 12500, pagado: 7400, email: 3700, referidos: 3200, redes: 1700, otros: 0 },
+                { año: 2025, mes: 9, total: 30000, organico: 13000, pagado: 7600, email: 3800, referidos: 3300, redes: 1800, otros: 0 },
+                { año: 2025, mes: 10, total: 31000, organico: 13500, pagado: 7800, email: 3900, referidos: 3400, redes: 1900, otros: 0 },
+                { año: 2025, mes: 11, total: 32000, organico: 14000, pagado: 8000, email: 4000, referidos: 3500, redes: 2000, otros: 0 },
+                { año: 2025, mes: 12, total: 33000, organico: 14500, pagado: 8200, email: 4100, referidos: 3600, redes: 2100, otros: 0 }
+            ];
+            
+            sheetData = sampleData;
+            loading.classList.add('hidden');
+            dashboardContent.classList.remove('hidden');
+            applyDataFilters();
+        }
+        
+        // Apply filters to data
+        function applyDataFilters() {
+            const selectedYears = Array.from(document.getElementById('yearFilter').selectedOptions).map(opt => parseInt(opt.value));
+            const selectedMonths = Array.from(document.getElementById('monthFilter').selectedOptions).map(opt => parseInt(opt.value));
+            const selectedChannels = Array.from(document.getElementById('channelFilter').selectedOptions).map(opt => opt.value);
+            const compareSameMonth = document.getElementById('compareSameMonth').checked;
+            
+            if (selectedYears.length === 0 || selectedMonths.length === 0 || selectedChannels.length === 0) {
+                showError('Por favor selecciona al menos un año, un mes y un canal');
+                return;
+            }
+            
+            // Filter data based on selections
+            filteredData = sheetData.filter(item => {
+                return selectedYears.includes(item.año) && selectedMonths.includes(item.mes);
+            });
+            
+            // If comparing same month across years, we need to group data differently
+            if (compareSameMonth && selectedMonths.length === 1) {
+                // For this view, we'll show all years for the selected month
+                const selectedMonth = selectedMonths[0];
+                filteredData = sheetData.filter(item => item.mes === selectedMonth);
+            }
+            
+            // Update UI with filtered data
+            updateDashboard();
+        }
+        
+        // Update dashboard with filtered data
+        function updateDashboard() {
+            if (filteredData.length === 0) {
+                showError('No hay datos que coincidan con los filtros seleccionados');
+                return;
+            }
+            
+            // Calculate totals
+            const totalRevenue = filteredData.reduce((sum, item) => sum + item.total, 0);
+            const organicRevenue = filteredData.reduce((sum, item) => sum + item.organico, 0);
+            const paidRevenue = filteredData.reduce((sum, item) => sum + item.pagado, 0);
+            const emailRevenue = filteredData.reduce((sum, item) => sum + item.email, 0);
+            
+            // Update summary cards
+            document.getElementById('totalRevenue').textContent = `$${totalRevenue.toLocaleString()}`;
+            document.getElementById('organicRevenue').textContent = `$${organicRevenue.toLocaleString()}`;
+            document.getElementById('paidRevenue').textContent = `$${paidRevenue.toLocaleString()}`;
+            document.getElementById('emailRevenue').textContent = `$${emailRevenue.toLocaleString()}`;
+            
+            // Update data table
+            updateDataTable();
+            
+            // Update charts
+            updateCharts();
+        }
+        
+        // Update data table
+        function updateDataTable() {
+            const tableBody = document.getElementById('dataTableBody');
+            tableBody.innerHTML = '';
+            
+            // Sort data by year and month
+            const sortedData = [...filteredData].sort((a, b) => {
+                if (a.año !== b.año) return a.año - b.año;
+                return a.mes - b.mes;
+            });
+            
+            // Add rows to table
+            sortedData.forEach(item => {
+                const row = document.createElement('tr');
+                
+                row.innerHTML = `
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${item.año}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${getMonthName(item.mes)}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">$${item.total.toLocaleString()}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">$${item.organico.toLocaleString()}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">$${item.pagado.toLocaleString()}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">$${item.email.toLocaleString()}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">$${item.referidos.toLocaleString()}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">$${item.redes.toLocaleString()}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">$${item.otros.toLocaleString()}</td>
+                `;
+                
+                tableBody.appendChild(row);
+            });
+        }
+        
+        // Update all charts
+        function updateCharts() {
+            updateMonthlyRevenueChart();
+            updateChannelComparisonChart();
+            updateChannelDistributionChart();
+            updateMonthComparisonChart();
+        }
+        
+        // Update monthly revenue chart
+        function updateMonthlyRevenueChart() {
+            const ctx = document.getElementById('monthlyRevenueChart').getContext('2d');
+            
+            // Group data by year and month
+            const years = [...new Set(filteredData.map(item => item.año))];
+            const months = [...new Set(filteredData.map(item => item.mes))].sort((a, b) => a - b);
+            
+            // Prepare datasets
+            const datasets = years.map(year => {
+                const yearData = filteredData.filter(item => item.año === year);
+                
+                // Fill in data for all months, even if some are missing
+                const data = months.map(month => {
+                    const monthData = yearData.find(item => item.mes === month);
+                    return monthData ? monthData.total : 0;
+                });
+                
+                return {
+                    label: year.toString(),
+                    data: data,
+                    borderColor: getRandomColor(),
+                    backgroundColor: 'rgba(0, 0, 0, 0)',
+                    borderWidth: 2,
+                    tension: 0.1
+                };
+            });
+            
+            // Destroy previous chart if it exists
+            if (charts.monthlyRevenue) {
+                charts.monthlyRevenue.destroy();
+            }
+            
+            // Create new chart
+            charts.monthlyRevenue = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: months.map(month => getMonthName(month)),
+                    datasets: datasets
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        title: {
+                            display: true,
+                            text: 'Facturación Mensual por Año'
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    return `${context.dataset.label}: $${context.raw.toLocaleString()}`;
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            ticks: {
+                                callback: function(value) {
+                                    return `$${value.toLocaleString()}`;
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+        
+        // Update channel comparison chart
+        function updateChannelComparisonChart() {
+            const ctx = document.getElementById('channelComparisonChart').getContext('2d');
+            const selectedChannels = Array.from(document.getElementById('channelFilter').selectedOptions).map(opt => opt.value);
+            
+            // Calculate totals for each channel
+            const channelTotals = {};
+            selectedChannels.forEach(channel => {
+                channelTotals[channel] = filteredData.reduce((sum, item) => sum + item[channel], 0);
+            });
+            
+            // Prepare data
+            const labels = selectedChannels.map(channel => {
+                switch(channel) {
+                    case 'total': return 'Total';
+                    case 'organico': return 'Orgánico';
+                    case 'pagado': return 'Pagado';
+                    case 'email': return 'Email';
+                    case 'referidos': return 'Referidos';
+                    case 'redes': return 'Redes Sociales';
+                    case 'otros': return 'Otros';
+                    default: return channel;
+                }
+            });
+            
+            const data = selectedChannels.map(channel => channelTotals[channel]);
+            const backgroundColors = selectedChannels.map(() => getRandomColor());
+            
+            // Destroy previous chart if it exists
+            if (charts.channelComparison) {
+                charts.channelComparison.destroy();
+            }
+            
+            // Create new chart
+            charts.channelComparison = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Facturación por Canal',
+                        data: data,
+                        backgroundColor: backgroundColors,
+                        borderColor: backgroundColors.map(color => darkenColor(color, 20)),
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        title: {
+                            display: true,
+                            text: 'Comparación de Facturación por Canal'
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    return `$${context.raw.toLocaleString()}`;
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            ticks: {
+                                callback: function(value) {
+                                    return `$${value.toLocaleString()}`;
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+        
+        // Update channel distribution chart
+        function updateChannelDistributionChart() {
+            const ctx = document.getElementById('channelDistributionChart').getContext('2d');
+            const selectedChannels = Array.from(document.getElementById('channelFilter').selectedOptions)
+                .map(opt => opt.value)
+                .filter(channel => channel !== 'total'); // Exclude total from pie chart
+            
+            // Calculate totals for each channel
+            const channelTotals = {};
+            selectedChannels.forEach(channel => {
+                channelTotals[channel] = filteredData.reduce((sum, item) => sum + item[channel], 0);
+            });
+            
+            // Prepare data
+            const labels = selectedChannels.map(channel => {
+                switch(channel) {
+                    case 'organico': return 'Orgánico';
+                    case 'pagado': return 'Pagado';
+                    case 'email': return 'Email';
+                    case 'referidos': return 'Referidos';
+                    case 'redes': return 'Redes Sociales';
+                    case 'otros': return 'Otros';
+                    default: return channel;
+                }
+            });
+            
+            const data = selectedChannels.map(channel => channelTotals[channel]);
+            const backgroundColors = selectedChannels.map(() => getRandomColor());
+            
+            // Destroy previous chart if it exists
+            if (charts.channelDistribution) {
+                charts.channelDistribution.destroy();
+            }
+            
+            // Create new chart
+            charts.channelDistribution = new Chart(ctx, {
+                type: 'pie',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        data: data,
+                        backgroundColor: backgroundColors,
+                        borderColor: '#fff',
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        title: {
+                            display: true,
+                            text: 'Distribución de Facturación por Canal'
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    const label = context.label || '';
+                                    const value = context.raw || 0;
+                                    const total = context.dataset.data.reduce((a, b) => a + b, 0);
+                                    const percentage = Math.round((value / total) * 100);
+                                    return `${label}: $${value.toLocaleString()} (${percentage}%)`;
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+        
+        // Update month comparison chart
+        function updateMonthComparisonChart() {
+            const ctx = document.getElementById('monthComparisonChart').getContext('2d');
+            const selectedChannels = Array.from(document.getElementById('channelFilter').selectedOptions).map(opt => opt.value);
+            
+            // Group data by month and year
+            const months = [...new Set(filteredData.map(item => item.mes))].sort((a, b) => a - b);
+            const years = [...new Set(filteredData.map(item => item.año))].sort((a, b) => a - b);
+            
+            // Prepare datasets for each channel
+            const datasets = selectedChannels.map(channel => {
+                const data = months.map(month => {
+                    const monthData = filteredData.filter(item => item.mes === month);
+                    return monthData.reduce((sum, item) => sum + item[channel], 0);
+                });
+                
+                return {
+                    label: getChannelLabel(channel),
+                    data: data,
+                    backgroundColor: getRandomColor(),
+                    borderColor: getRandomColor(),
+                    borderWidth: 1
+                };
+            });
+            
+            // Destroy previous chart if it exists
+            if (charts.monthComparison) {
+                charts.monthComparison.destroy();
+            }
+            
+            // Create new chart
+            charts.monthComparison = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: months.map(month => getMonthName(month)),
+                    datasets: datasets
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        title: {
+                            display: true,
+                            text: 'Comparación de Facturación por Mes'
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    return `${context.dataset.label}: $${context.raw.toLocaleString()}`;
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            stacked: true,
+                        },
+                        y: {
+                            stacked: true,
+                            beginAtZero: true,
+                            ticks: {
+                                callback: function(value) {
+                                    return `$${value.toLocaleString()}`;
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+        
+        // Toggle notes section visibility
+        function toggleNotesSection() {
+            notesSection.classList.toggle('hidden');
+            
+            if (!notesSection.classList.contains('hidden')) {
+                loadNotes();
+            }
+        }
+        
+        // Load and display notes
+        function loadNotes() {
+            const notesContainer = document.getElementById('notesContainer');
+            notesContainer.innerHTML = '';
+            
+            if (Object.keys(notes).length === 0) {
+                notesContainer.innerHTML = '<p class="text-gray-500">No hay notas guardadas.</p>';
+                return;
+            }
+            
+            // Group notes by year and month
+            const sortedNotes = Object.entries(notes).sort((a, b) => {
+                const [yearA, monthA] = a[0].split('-').map(Number);
+                const [yearB, monthB] = b[0].split('-').map(Number);
+                
+                if (yearA !== yearB) return yearB - yearA;
+                return monthB - monthA;
+            });
+            
+            sortedNotes.forEach(([key, note]) => {
+                const [year, month] = key.split('-');
+                const noteElement = document.createElement('div');
+                noteElement.className = 'mb-4 p-3 bg-gray-50 rounded-md';
+                
+                noteElement.innerHTML = `
+                    <div class="flex justify-between items-start mb-2">
+                        <h4 class="font-medium">${getMonthName(parseInt(month))} ${year}</h4>
+                        <button class="text-red-500 delete-note" data-key="${key}">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </div>
+                    <p class="text-gray-700">${note}</p>
+                `;
+                
+                notesContainer.appendChild(noteElement);
+            });
+            
+            // Add event listeners to delete buttons
+            document.querySelectorAll('.delete-note').forEach(button => {
+                button.addEventListener('click', function() {
+                    const key = this.getAttribute('data-key');
+                    deleteNote(key);
+                });
+            });
+        }
+        
+        // Save a new note
+        function saveNewNote() {
+            const month = document.getElementById('noteMonth').value;
+            const year = document.getElementById('noteYear').value;
+            const text = document.getElementById('noteText').value.trim();
+            
+            if (!month || !year || !text) {
+                showError('Por favor completa todos los campos para guardar una nota');
+                return;
+            }
+            
+            const key = `${year}-${month}`;
+            notes[key] = text;
+            
+            // Save to localStorage
+            localStorage.setItem('billingNotes', JSON.stringify(notes));
+            
+            // Clear form
+            document.getElementById('noteMonth').value = '';
+            document.getElementById('noteYear').value = '';
+            document.getElementById('noteText').value = '';
+            
+            // Reload notes
+            loadNotes();
+        }
+        
+        // Delete a note
+        function deleteNote(key) {
+            delete notes[key];
+            localStorage.setItem('billingNotes', JSON.stringify(notes));
+            loadNotes();
+        }
+        
+        // Export dashboard to PDF
+        function exportToPdf() {
+            const { jsPDF } = window.jspdf;
+            const doc = new jsPDF('p', 'pt', 'a4');
+            
+            // Add title
+            doc.setFontSize(20);
+            doc.text('Reporte de Facturación', 40, 40);
+            
+            // Add date
+            doc.setFontSize(12);
+            doc.text(`Generado el: ${new Date().toLocaleDateString()}`, 40, 60);
+            
+            // Add filters info
+            const selectedYears = Array.from(document.getElementById('yearFilter').selectedOptions).map(opt => opt.value).join(', ');
+            const selectedMonths = Array.from(document.getElementById('monthFilter').selectedOptions).map(opt => getMonthName(parseInt(opt.value))).join(', ');
+            const selectedChannels = Array.from(document.getElementById('channelFilter').selectedOptions).map(opt => getChannelLabel(opt.value)).join(', ');
+            
+            doc.text(`Filtros aplicados:`, 40, 80);
+            doc.text(`- Años: ${selectedYears}`, 50, 100);
+            doc.text(`- Meses: ${selectedMonths}`, 50, 120);
+            doc.text(`- Canales: ${selectedChannels}`, 50, 140);
+            
+            // Add charts (we'll use html2canvas to capture them)
+            const promises = [];
+            const chartElements = [
+                document.getElementById('monthlyRevenueChart'),
+                document.getElementById('channelComparisonChart'),
+                document.getElementById('channelDistributionChart'),
+                document.getElementById('monthComparisonChart')
+            ];
+            
+            let yPosition = 180;
+            
+            chartElements.forEach((chartElement, index) => {
+                if (chartElement) {
+                    promises.push(
+                        html2canvas(chartElement).then(canvas => {
+                            const imgData = canvas.toDataURL('image/png');
+                            const imgWidth = 500;
+                            const imgHeight = canvas.height * imgWidth / canvas.width;
+                            
+                            // Add page if needed
+                            if (yPosition + imgHeight > doc.internal.pageSize.height - 40) {
+                                doc.addPage();
+                                yPosition = 40;
+                            }
+                            
+                            doc.addImage(imgData, 'PNG', 40, yPosition, imgWidth, imgHeight);
+                            yPosition += imgHeight + 20;
+                        })
+                    );
+                }
+            });
+            
+            // Add data table
+            promises.push(
+                html2canvas(document.querySelector('#dataTableBody').parentElement).then(canvas => {
+                    const imgData = canvas.toDataURL('image/png');
+                    const imgWidth = 500;
+                    const imgHeight = canvas.height * imgWidth / canvas.width;
+                    
+                    // Add page if needed
+                    if (yPosition + imgHeight > doc.internal.pageSize.height - 40) {
+                        doc.addPage();
+                        yPosition = 40;
+                    }
+                    
+                    doc.addImage(imgData, 'PNG', 40, yPosition, imgWidth, imgHeight);
+                })
+            );
+            
+            // When all promises are resolved, save the PDF
+            Promise.all(promises).then(() => {
+                doc.save(`reporte_facturacion_${new Date().toISOString().slice(0, 10)}.pdf`);
+            });
+        }
+        
+        // Export dashboard to image
+        function exportToImage() {
+            const dashboard = document.getElementById('dashboardContent');
+            
+            html2canvas(dashboard).then(canvas => {
+                const link = document.createElement('a');
+                link.download = `captura_facturacion_${new Date().toISOString().slice(0, 10)}.png`;
+                link.href = canvas.toDataURL('image/png');
+                link.click();
+            });
+        }
+        
+        // Helper function to get month name
+        function getMonthName(monthNumber) {
+            const months = [
+                'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+                'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'
+            ];
+            return months[monthNumber - 1];
+        }
+        
+        // Helper function to get channel label
+        function getChannelLabel(channel) {
+            switch(channel) {
+                case 'total': return 'Total';
+                case 'organico': return 'Orgánico';
+                case 'pagado': return 'Pagado';
+                case 'email': return 'Email';
+                case 'referidos': return 'Referidos';
+                case 'redes': return 'Redes Sociales';
+                case 'otros': return 'Otros';
+                default: return channel;
+            }
+        }
+        
+        // Helper function to generate random colors
+        function getRandomColor() {
+            const letters = '0123456789ABCDEF';
+            let color = '#';
+            for (let i = 0; i < 6; i++) {
+                color += letters[Math.floor(Math.random() * 16)];
+            }
+            return color;
+        }
+        
+        // Helper function to darken a color
+        function darkenColor(color, percent) {
+            const num = parseInt(color.replace('#', ''), 16);
+            const amt = Math.round(2.55 * percent);
+            const R = (num >> 16) - amt;
+            const G = (num >> 8 & 0x00FF) - amt;
+            const B = (num & 0x0000FF) - amt;
+            
+            return '#' + (
+                0x1000000 +
+                (R < 0 ? 0 : R) * 0x10000 +
+                (G < 0 ? 0 : G) * 0x100 +
+                (B < 0 ? 0 : B)
+            ).toString(16).slice(1);
+        }
+        
+        // Helper function to show error messages
+        function showError(message) {
+            errorText.textContent = message;
+            errorMessage.classList.remove('hidden');
+            loading.classList.add('hidden');
+        }
+        
+        // Initialize the app when the page loads
+        window.addEventListener('DOMContentLoaded', init);
+    </script>
+</body>
+</html>
