@@ -19,7 +19,7 @@
 
     <div class="mb-6">
       <label for="sheetIdInput" class="block text-sm font-semibold text-gray-700 mb-1">ID de Google Sheets</label>
-      <input id="sheetIdInput" type="text" placeholder="Ej: 1b0GgPG3_..." class="w-full p-2 border rounded" />
+      <input id="sheetIdInput" type="text" placeholder="Pega el enlace o ID de Google Sheets" class="w-full p-2 border rounded" />
       <button onclick="loadGoogleSheet()" class="mt-2 bg-green-600 text-white px-4 py-2 rounded">Cargar Datos</button>
     </div>
 
@@ -55,10 +55,17 @@
   <script>
     let sheetData = [];
 
+    function extractSheetId(input) {
+      const match = input.match(/[-\w]{25,}/);
+      return match ? match[0] : null;
+    }
+
     function loadGoogleSheet() {
-      const sheetId = document.getElementById('sheetIdInput').value.trim();
+      const rawInput = document.getElementById('sheetIdInput').value.trim();
+      const sheetId = extractSheetId(rawInput);
+
       if (!sheetId) {
-        alert("Por favor ingresa un ID de hoja válido.");
+        alert("Por favor ingresa un ID o enlace válido de Google Sheets.");
         return;
       }
 
