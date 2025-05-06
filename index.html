@@ -57,6 +57,46 @@
       </div>
     </div>
 
+    <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
+  <div>
+    <label class="block font-semibold mb-1">Métrica 2</label>
+    <select id="customMetric2" class="w-full p-2 border rounded">
+      <option value="">-- Ninguna --</option>
+      <option value="Facturación Total">Facturación Total</option>
+      <option value="Facturación Orgánico + Directo + Referidos">Facturación Orgánico + Directo + Referidos</option>
+      <option value="Facturación Emails">Facturación Emails</option>
+      <option value="- Cupón Bienvenida">- Cupón Bienvenida</option>
+      <option value="- Cupón Carrito Abandonado">- Cupón Carrito Abandonado</option>
+      <option value="- Cupón Win Back">- Cupón Win Back</option>
+      <option value="- Cupón Buscador Abandonado">- Cupón Buscador Abandonado</option>
+      <option value="- Campaña Emails">- Campaña Emails</option>
+      <option value="Tráfico Total">Tráfico Total</option>
+      <option value="Tráfico Orgánico">Tráfico Orgánico</option>
+      <option value="Tráfico Directo">Tráfico Directo</option>
+      <option value="Tráfico Emails">Tráfico Emails</option>
+      <option value="Tráfico Referido">Tráfico Referido</option>
+      <option value="Tráfico sin Cookies">Tráfico sin Cookies</option>
+      <option value="Carritos Iniciados">Carritos Iniciados</option>
+      <option value="Carritos Abandonados">Carritos Abandonados</option>
+      <option value="Usuarios Total">Usuarios Total</option>
+      <option value="Usuarios Nuevos">Usuarios Nuevos</option>
+      <option value="Usuarios Recurrentes">Usuarios Recurrentes</option>
+    </select>
+  </div>
+  <div>
+    <label class="block font-semibold mb-1">Mes 1 (Métrica 2)</label>
+    <select id="month1_2" class="w-full p-2 border rounded"><option value="">-- Selecciona --</option></select>
+  </div>
+  <div>
+    <label class="block font-semibold mb-1">Mes 2 (Métrica 2)</label>
+    <select id="month2_2" class="w-full p-2 border rounded"><option value="">-- Selecciona --</option></select>
+  </div>
+  <div>
+    <label class="block font-semibold mb-1">Mes 3 (Métrica 2)</label>
+    <select id="month3_2" class="w-full p-2 border rounded"><option value="">-- Selecciona --</option></select>
+  </div>
+</div>
+
     <div class="flex justify-end mb-4">
       <button id="generateCustomComparison" class="bg-blue-600 text-white px-4 py-2 rounded">Generar Comparación</button>
     </div>
@@ -70,6 +110,152 @@
 
   <script>
     let sheetData = [];
+
+    document.getElementById('generateCustomComparison').addEventListener('click', () => {
+      const metric1 = document.getElementById('customMetric').value;
+      const metric2 = document.getElementById('customMetric2').value;
+
+      const months1 = ['month1', 'month2', 'month3'].map(id => document.getElementById(id).value).filter(Boolean);
+      const months2 = ['month1_2', 'month2_2', 'month3_2'].map(id => document.getElementById(id).value).filter(Boolean);
+
+      const parseEntry = entry => {
+        const [m, y] = entry.split('-').map(Number);
+        return { m, y };
+      };
+      const getLabel = (m, y) => `${getMonthName(m)} ${y}`;
+      const getDataValue = (m, y, key) => {
+        const item = sheetData.find(d => d.año === y && d.mes === m);
+        return item && key in item ? item[key] : 0;
+      };
+
+      const labels = [...new Set([...months1, ...months2].map(e => {
+        const { m, y } = parseEntry(e);
+        return getLabel(m, y);
+      }))];
+
+      const values1 = labels.map(label => {
+        const [mesTexto, añoTexto] = label.split(' ');
+        const m = getMonthNumber(mesTexto);
+        const y = parseInt(añoTexto);
+        return getDataValue(m, y, metric1);
+      });
+
+      const values2 = labels.map(label => {
+        const [mesTexto, añoTexto] = label.split(' ');
+        const m = getMonthNumber(mesTexto);
+        const y = parseInt(añoTexto);
+        return getDataValue(m, y, metric2);
+      });
+
+      const ctx = document.getElementById('customComparisonChart').getContext('2d');
+      if (window.customChart) window.customChart.destroy();
+      window.customChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels,
+          datasets: [
+          {
+            label: metric1,
+            data: values1,
+            borderColor: '#3B82F6',
+            fill: false,
+            tension: 0.2,
+            pointRadius: 6,
+            pointHoverRadius: 8,
+            pointBackgroundColor: '#3B82F6'
+          },
+          ...(metric2 ? [{
+            label: metric2,
+            data: values2,
+            borderColor: '#10B981',
+            fill: false,
+            tension: 0.2,
+            pointRadius: 6,
+            pointHoverRadius: 8,
+            pointBackgroundColor: '#10B981'
+          }] : [])
+        ]
+        },
+        options: {
+          plugins: {
+            tooltip: {
+              callbacks: {
+                label: (context) => {
+                  const label = context.dataset.label;
+                  const value = context.raw;
+                  const isNumeric = [
+                    "Carritos Iniciados", "Carritos Abandonados", "Usuarios Total",
+                    "Usuarios Nuevos", "Usuarios Recurrentes", "Tráfico Total",
+                    "Tráfico Orgánico", "Tráfico Directo", "Tráfico Emails",
+                    "Tráfico Referido", "Tráfico sin Cookies"
+                  ].includes(label);
+                  const symbol = isNumeric ? '' : '$';
+                  return `${label}: ${symbol}${value.toLocaleString()}`;
+                }
+              }
+            },
+            datalabels: {
+              display: true,
+              align: 'top',
+              anchor: 'end',
+              offset: 12,
+              clip: false,
+              formatter: (value, context) => {
+                const label = context.chart.data.datasets[context.datasetIndex].label;
+                const isNumeric = [
+                  "Carritos Iniciados", "Carritos Abandonados", "Usuarios Total",
+                  "Usuarios Nuevos", "Usuarios Recurrentes", "Tráfico Total",
+                  "Tráfico Orgánico", "Tráfico Directo", "Tráfico Emails",
+                  "Tráfico Referido", "Tráfico sin Cookies"
+                ].includes(label);
+                const symbol = isNumeric ? '' : '$';
+                return symbol + value.toLocaleString();
+              }
+            }
+          },
+          scales: { y: { display: false } }
+        },
+        plugins: [ChartDataLabels]
+      });
+
+      const summaryDiv = document.getElementById('summary');
+      let table = '<table class="w-full text-sm text-left border border-gray-300 mt-6"><thead><tr class="bg-gray-200"><th class="p-2">Métrica</th><th class="p-2">Comparación</th><th class="p-2">Diferencia</th><th class="p-2">% Cambio</th></tr></thead><tbody>';
+
+      function renderRows(values, label) {
+        for (let i = 1; i < values.length; i++) {
+          const diff = values[i] - values[i - 1];
+          const percent = values[i - 1] ? ((diff / values[i - 1]) * 100).toFixed(2) : '0.00';
+          const diffColor = diff >= 0 ? 'text-green-600' : 'text-red-600';
+          const isNumeric = [
+  "Carritos Iniciados", "Carritos Abandonados", "Usuarios Total",
+  "Usuarios Nuevos", "Usuarios Recurrentes", "Tráfico Total",
+  "Tráfico Orgánico", "Tráfico Directo", "Tráfico Emails",
+  "Tráfico Referido", "Tráfico sin Cookies"
+].includes(label);
+const symbol = isNumeric ? '' : '$';
+table += `<tr class="border-t">
+  <td class="p-2 font-medium">${label}</td>
+  <td class="p-2">${labels[i - 1]} → ${labels[i]}</td>
+  <td class="p-2 ${diffColor}">${symbol}${diff.toLocaleString()}</td>
+  <td class="p-2">${percent}%</td>
+</tr>`;
+        }
+      }
+
+      renderRows(values1, metric1);
+      if (metric2) renderRows(values2, metric2);
+
+      table += '</tbody></table>';
+      summaryDiv.innerHTML = table;
+    });
+
+    function getMonthNumber(mes) {
+      const map = {
+        'Enero': 1, 'Febrero': 2, 'Marzo': 3, 'Abril': 4, 'Mayo': 5, 'Junio': 6,
+        'Julio': 7, 'Agosto': 8, 'Septiembre': 9, 'Octubre': 10, 'Noviembre': 11, 'Diciembre': 12
+      };
+      return map[mes];
+    }
 
     document.getElementById('fileInput').addEventListener('change', function (e) {
       const file = e.target.files[0];
@@ -95,14 +281,14 @@
 
           const entry = { año, mes };
           for (let row = 1; row < json.length; row++) {
-            const key = json[row][0];
+            const key = json[row][0]?.toString().trim();
             const value = parseFloat((json[row][col] || "0").toString().replace(/[€\$,]/g, '').replace(',', '.'));
             entry[key] = value;
           }
           sheetData.push(entry);
         }
 
-        const dropdowns = ['month1', 'month2', 'month3'];
+        const dropdowns = ['month1', 'month2', 'month3', 'month1_2', 'month2_2', 'month3_2'];
         const options = ['<option value="">-- Selecciona --</option>'];
         sheetData.forEach(item => {
           const label = `${getMonthName(item.mes)} ${item.año}`;
@@ -116,86 +302,6 @@
         alert("Datos cargados desde el Excel.");
       };
       reader.readAsArrayBuffer(file);
-    });
-
-    document.getElementById('generateCustomComparison').addEventListener('click', () => {
-      const metric = document.getElementById('customMetric').value;
-      const months = ['month1', 'month2', 'month3'].map(id => document.getElementById(id).value).filter(Boolean);
-
-      const parseEntry = entry => {
-        const [m, y] = entry.split('-').map(Number);
-        return { m, y };
-      };
-      const getLabel = (m, y) => `${getMonthName(m)} ${y}`;
-      const getDataValue = (m, y, key) => {
-        const item = sheetData.find(d => d.año === y && d.mes === m);
-        return item && key in item ? item[key] : 0;
-      };
-
-      const labels = [];
-      const values = [];
-      months.forEach(entry => {
-        const { m, y } = parseEntry(entry);
-        labels.push(getLabel(m, y));
-        values.push(getDataValue(m, y, metric));
-      });
-
-      const ctx = document.getElementById('customComparisonChart').getContext('2d');
-      if (window.customChart) window.customChart.destroy();
-      window.customChart = new Chart(ctx, {
-        type: 'line',
-        data: {
-          labels,
-          datasets: [{
-            label: metric,
-            data: values,
-            borderColor: '#3B82F6',
-            fill: false,
-            tension: 0.2,
-            pointRadius: 6,
-            pointHoverRadius: 8,
-            pointBackgroundColor: '#3B82F6'
-          }]
-        },
-        options: {
-          plugins: {
-            tooltip: {
-              callbacks: {
-                label: (context) => `${context.dataset.label}: $${context.raw.toLocaleString()}`
-              }
-            },
-            datalabels: {
-              display: true,
-              align: 'top',
-              anchor: 'end',
-              offset: 12,
-              clip: false,
-              labels: {
-                title: {
-                  display: ctx => ctx.chart.data.datasets[0].data[ctx.dataIndex] !== 0
-                }
-              },
-              formatter: value => `$${value.toLocaleString()}`
-            }
-          },
-          scales: { y: { display: false } }
-        },
-        plugins: [ChartDataLabels]
-      });
-
-      const summaryDiv = document.getElementById('summary');
-      summaryDiv.innerHTML = '';
-      if (labels.length > 1) {
-        let table = '<table class="w-full text-sm text-left border border-gray-300 mt-4"><thead><tr class="bg-gray-200"><th class="p-2">Comparación</th><th class="p-2">Diferencia</th><th class="p-2">% Cambio</th></tr></thead><tbody>';
-        for (let i = 1; i < labels.length; i++) {
-          const diff = values[i] - values[i - 1];
-          const percent = values[i - 1] ? ((diff / values[i - 1]) * 100).toFixed(2) : '0.00';
-          const diffColor = diff >= 0 ? 'text-green-600' : 'text-red-600';
-          table += `<tr class="border-t"><td class="p-2 font-medium">${labels[i - 1]} → ${labels[i]}</td><td class="p-2 ${diffColor}">$${diff.toLocaleString()}</td><td class="p-2">${percent}%</td></tr>`;
-        }
-        table += '</tbody></table>';
-        summaryDiv.innerHTML = table;
-      }
     });
 
     function getMonthName(m) {
